@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>سجلات أوريجنس</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e0b14;--card:#1a1524;--line:#33294a;--tx:#f1ebff;--mu:#a597c4;--gold:#e8b84a;--ac:#8b5cf6;--red:#ef5b5b;--ok:#4ade80;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#f6f2fc;--card:#fff;--line:#ddd2f0;--tx:#201838;--mu:#6b5e8a;--gold:#a87a10}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:'Cairo',Tahoma,sans-serif;line-height:1.6}
+.wrap{max-width:900px;margin:0 auto;padding:14px}
+h1,h2,h3{margin:0}
+.btn{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+.btn.g{background:transparent;border:1px solid var(--line);color:var(--tx)}
+.btn.r{background:var(--red)}
+.btn.s{padding:4px 10px;font-size:.85rem}
+.btn:disabled{opacity:.4;cursor:default}
+input,select,textarea{width:100%;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:9px;font:inherit;margin:4px 0 10px}
+label{font-size:.85rem;color:var(--mu)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.badge{background:var(--card);border:1px solid var(--gold);color:var(--gold);border-radius:20px;padding:2px 12px;font-size:.85rem}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;padding-bottom:4px}
+.tabs button{white-space:nowrap}
+.tabs .on{background:var(--gold);color:#1a1208;border-color:var(--gold)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.row{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
+.row span:first-child{color:var(--mu)}
+.bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin:2px 0 6px}
+.bar i{display:block;height:100%;background:var(--ac)}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.center{max-width:380px;margin:12vh auto;text-align:center}
+#m{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;padding:14px;z-index:9}
+#m>div{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;width:100%;max-width:400px;max-height:90vh;overflow:auto}
+#t{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--gold);padding:8px 18px;border-radius:20px;display:none;z-index:10}
+.mu{color:var(--mu);font-size:.85rem}
+.code{font-family:monospace;letter-spacing:2px;color:var(--gold);direction:ltr;display:inline-block}
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="origins-config.js"></script>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="m"><div id="mb"></div></div>
+<div id="t"></div>
+<script>
+const W={hell:{n:'الجحيم',i:'🔥'},demons:{n:'الشياطين',i:'👹'},magic:{n:'السحر',i:'🔮'},kingdom:{n:'المملكة',i:'🏰'},sys:{n:'النظام',i:'👑'}};
+const C={coins:['الكوينز','💰'],gems:['الجواهر','💎'],gp:['الجي بي','💲'],usd:['الدولار','💸']};
+const K=['coins','gems','gp'];
+const TW=['hell','demons','magic'];let trTo='',trMode='sell';
+let S,sess,world,tab='players',okFn=null;
+try{S=JSON.parse(localStorage.getItem('og_data'))}catch(e){}
+S=S||{roles:{},players:[],vaults:{hell:{coins:0,gems:0,gp:0},demons:{coins:0,gems:0,gp:0},magic:{coins:0,gems:0,gp:0}},log:[]};
+try{sess=localStorage.getItem('og_s')}catch(e){}
+let plid;try{plid=localStorage.getItem('og_p')}catch(e){}
+S.undo=S.undo||{hell:[],demons:[],magic:[]};S.undo.sys=S.undo.sys||[];S.undo.kingdom=S.undo.kingdom||[];S.vaults.sys=S.vaults.sys||{coins:0,gems:0,gp:0};S.vaults.kingdom=S.vaults.kingdom||{coins:0,gems:0,gp:0};S.dests=S.dests||[{n:'المملكة',price:10000}];
+const sl=w=>JSON.stringify({players:S.players.filter(p=>p.world===w),vault:S.vaults[w],log:S.log.filter(l=>l.w===w)});
+let prevSl={},noPush=false,prevP={};
+const snap=()=>{Object.keys(W).forEach(w=>prevSl[w]=sl(w));pBase()};
+snap();
+const save=()=>{
+ if(!noPush)Object.keys(W).forEach(w=>{const c=sl(w);if(c!==prevSl[w]){const h=JSON.parse(c).log[0],ph=JSON.parse(prevSl[w]).log[0];S.undo[w].push({s:prevSl[w],d:(h&&(!ph||h.t!==ph.t||h.s!==ph.s))?h.s:'تعديل في السجلات'});if(S.undo[w].length>20)S.undo[w].shift()}});
+ pCapture();snap();
+ try{localStorage.setItem('og_data',JSON.stringify(S))}catch(e){}
+ if(typeof cloudPush==='function')cloudPush();
+};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>{const v=Number(n),s=Math.abs(v).toLocaleString('en-US',{maximumFractionDigits:2});return v<0?s+'-':s};
+const $=id=>document.getElementById(id);
+const KD=['monsterCtl','kdMerchant','resMerchant'];
+const kind=()=>sess.split(':')[0], wd=()=>KD.includes(sess.split(':')[0])?'kingdom':sess.split(':')[1];
+const seeAll=()=>['owner','deputyOwner'].includes(kind());
+const canEdit=()=>seeAll()||['king','kingDep','monsterCtl'].includes(kind());
+const canDel=()=>seeAll()||['king','kingDep'].includes(kind());
+const canFill=()=>seeAll()||kind()==='king';
+const label=k=>{const[a,w]=k.split(':');const n=w?W[w].n:'';return({owner:'صاحب النظام',deputyOwner:'نائب صاحب النظام',king:'ملك عالم '+n,kingDep:'نائب ملك عالم '+n,merchant:'تاجر عالم '+n,monsterCtl:'متحكم الوحوش',kdMerchant:'تاجر المملكة',resMerchant:'تاجر الموارد'})[a]};
+let kSec='';
+const isKdD=d=>!!(d&&(d.kingdom??d.n==='المملكة'));
+const kdOK=p=>kind()==='king'?p.origin===wd():true;
+const wp=()=>S.players.filter(p=>p.world===world&&(world!=='kingdom'||((kSec===''||p.origin===kSec)&&kdOK(p))));
+function migrateKd(){let ch=false;S.players.forEach(p=>{if(p.traveling&&p.world!=='kingdom'&&!p.origin&&isKdD(S.dests.find(d=>d.n===p.dest))){p.origin=p.world;p.world='kingdom';ch=true}});return ch}
+function toast(s){const t=$('t');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',2200)}
+function addLog(w,s,o){if(w==='kingdom'&&!o){const q=S.players.find(p=>p.world==='kingdom'&&s.includes(p.name));if(q)o=q.origin}S.log.unshift(Object.assign({t:new Date().toLocaleString('ar-EG'),w,by:label(sess),s},o?{o}:{}));capLog();save()}
+function capLog(){const c={};S.log=S.log.filter(l=>(c[l.w]=(c[l.w]||0)+1)<=200)}
+function newPid(){let c;do{c=genCode()}while(S.players.some(p=>p.pid===c));return c}
+function genCode(){const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<8;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+
+function modal(title,body,ok,fn){okFn=fn;$('mb').innerHTML=`<h3>${title}</h3><div style="margin-top:10px">${body}</div><div class="acts"><button class="btn" onclick="okFn&&okFn()">${ok}</button><button class="btn g" onclick="closeM()">إلغاء</button></div>`;$('m').style.display='flex'}
+const closeM=()=>{$('m').style.display='none';rs0={}};
+
+function render(){
+ const A=$('app');if(cloud&&!cloudReady){A.innerHTML=`<div class="center card"><h1>\ud83d\udcdc \u0633\u062c\u0644\u0627\u062a \u0623\u0648\u0631\u064a\u062c\u0646\u0632</h1><p class="mu" id="cs">${cloudStatus}</p></div>`;return}const _e=ensureStaff()|migrateKd();if(_e||S.players.some(p=>!p.pid)){S.players.forEach(p=>{if(!p.pid)p.pid=newPid()});noPush=true;save();noPush=false}
+ if(!S.roles.owner){A.innerHTML=`<div class="center card"><h1>📜 سجلات أوريجنس</h1><p class="mu" style="font-size:.75rem" id="cs">${cloudStatus}</p><p class="mu">أول دخول للموقع: أدخل كودك الخاص ليُسجَّل كود صاحب النظام</p><input id="c" type="password" placeholder="كود صاحب النظام"><button class="btn" onclick="setup()">تسجيل صاحب النظام</button></div>`;return}
+ if(!sess||(!sess.startsWith('player:')&&!S.roles[sess])){sess=null;A.innerHTML=`<div class="center card"><h1>📜 سجلات أوريجنس</h1><p class="mu" style="font-size:.75rem" id="cs">${cloudStatus}</p><p class="mu">أدخل كود رتبتك أو المعرّف الخاص بك (ID) لعرض سجلك</p><input id="c" type="password" placeholder="الكود" onkeydown="if(event.key==='Enter')login()"><button class="btn" onclick="login()">دخول</button></div>`;return}
+ if(sess.startsWith('player:')){const p=S.players.find(x=>x.id===plid);if(!p){logout();return}world=p.world;selP=p.id;A.innerHTML=`<div class="top"><div><h2>📜 سجلات أوريجنس</h2><span class="badge">لاعب · ${W[world].i} ${W[world].n}</span></div><button class="btn g s" onclick="logout()">خروج</button></div><div id="v"></div>`;vPlayers();return}
+ if(seeAll())world=world||'hell';else if(kind()==='king'){if(world!==wd()&&world!=='kingdom')world=wd()}else world=wd();
+ const tabs=[['players','👥 السجلات'],['vault','🏦 الخزنة'],['shop','🛒 الشراء'],['xch','💱 الصرف'],['pay','💵 الرواتب'],['rst','🔄 التصفير'],['trade','🤝 بيع وتبادل'],['roles','👑 الرتب والأكواد'],['mon','🐲 الوحوش'],['log','🧾 السجل']].filter(t=>t[0]!=='roles'||['owner','deputyOwner','king'].includes(kind())).filter(t=>t[0]!=='shop'||['merchant','kdMerchant','resMerchant'].includes(kind())||canEdit()).filter(t=>t[0]!=='xch'||['owner','king','deputyOwner'].includes(kind())).filter(t=>t[0]!=='pay'||['owner','deputyOwner'].includes(kind())).filter(t=>t[0]!=='rst'||['owner','deputyOwner','king'].includes(kind())).filter(t=>t[0]!=='mon'||(world==='kingdom'&&['monsterCtl','owner','deputyOwner'].includes(kind()))).filter(t=>world!=='sys'||['players','log','xch','pay','rst'].includes(t[0])).filter(t=>world!=='kingdom'||!['vault','xch','pay','rst'].includes(t[0])).filter(t=>t[0]!=='trade'||(seeAll()&&TW.includes(world)));
+ A.innerHTML=`<div class="top"><div><h2>📜 سجلات أوريجنس</h2><span class="badge">${label(sess)}${(()=>{const r=S.players.find(p=>p.staff===sess);return r&&r.name!==label(sess)?' · '+esc(r.name):''})()}</span></div><div class="acts" style="margin:0">${canEdit()&&!(world==='kingdom'&&kind()==='king')?`<button class="btn g s" onclick="undoOp()" ${(S.undo[world]||[]).length?'':'disabled'}>↩️ تراجع</button>`:''}${kind()==='owner'?`<button class="btn g s" onclick="ctrlM()">⚙️ التحكم</button>`:''}<button class="btn g s" onclick="logout()">خروج</button></div></div>
+ ${(seeAll()||kind()==='king')?`<div class="tabs">${(seeAll()?Object.keys(W):[wd(),'kingdom']).map(k=>`<button class="btn g ${k===world?'on':''}" onclick="world='${k}';render()">${W[k].i} ${W[k].n}</button>`).join('')}</div>`:`<h3 style="margin-bottom:10px">${W[world].i} عالم ${W[world].n}</h3>`}
+ <div class="tabs">${tabs.map(t=>`<button class="btn g ${t[0]===tab?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</div>
+ <div id="v"></div>`;
+ ({players:vPlayers,vault:vVault,roles:vRoles,log:vLog,shop:vShop,xch:vXch,pay:vPay,rst:vRst,mon:vMon,trade:vTrade})[(tab==='trade'&&!(seeAll()&&TW.includes(world)))||(tab==='mon'&&!(world==='kingdom'&&['monsterCtl','owner','deputyOwner'].includes(kind())))||(tab==='roles'&&!['owner','deputyOwner','king'].includes(kind()))||(world==='sys'&&!['players','log','xch','pay','rst'].includes(tab))||(world==='kingdom'&&['vault','xch','pay','rst'].includes(tab))?'players':tab]();askProfile();
+}
+function setup(){const c=$('c').value.trim();if(c.length<4)return toast('الكود قصير جداً');S.roles.owner=c;sess='owner';localStorage.setItem('og_s',sess);save();render()}
+function login(){const c=$('c').value.trim();const k=Object.keys(S.roles).find(k=>S.roles[k]===c);if(k){sess=k;try{localStorage.setItem('og_s',k);localStorage.removeItem('og_p')}catch(e){}return render()}
+ const p=S.players.find(x=>x.pid&&x.pid.toUpperCase()===c.toUpperCase());if(!p)return toast('كود أو معرّف غير صحيح');
+ plid=p.id;sess='player:'+p.world;try{localStorage.setItem('og_s',sess);localStorage.setItem('og_p',plid)}catch(e){}render()}
+function logout(){sess=null;localStorage.removeItem('og_s');localStorage.removeItem('og_p');plid=null;profAsked=false;render()}
+
+function vPlayers(){
+ const L=wp();
+ const sp=L.find(x=>x.id===selP);$('v').innerHTML=(world==='kingdom'&&kind()!=='king'&&kind()!=='player'?`<select onchange="kSec=this.value;render()"><option value="">🏰 كل الأقسام</option>${Object.keys(W).filter(k=>k!=='kingdom').map(k=>`<option value="${k}" ${kSec===k?'selected':''}>${W[k].i} ${W[k].n}</option>`).join('')}</select>`:'')+`<select ${kind()==='player'?'hidden':''} onchange="selP=this.value;render()"><option value="">👥 كل اللاعبين (${L.length})</option>${L.map(x=>`<option value="${x.id}" ${sp&&sp.id===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select>`+(canEdit()?`${world!=='kingdom'?'<button class="btn" onclick="editP()">➕ لاعب جديد</button> ':''}<button class="btn g" onclick="bulk()">👥 عملية جماعية</button> ${world!=='kingdom'?'<button class="btn g" onclick="importTG()">📥 استيراد من تيليجرام</button> <button class="btn g" onclick="importRec()">📖 استيراد سجلات القدرات</button>':''}`:'')+`<div class="grid" style="margin-top:12px">`+((sp?[sp]:L).map(p=>`<div class="card"><h3>🔰 ${esc(p.name)} 🔰${p.traveling?' <span class="badge">(مسافر)</span>':''}${p.origin&&W[p.origin]?` <span class="badge">${W[p.origin].i} ${W[p.origin].n}</span>`:''}</h3>
+ <div class="row"><span>الفئة</span><b>${esc(p.cat||'—')}</b></div>
+ <div class="row"><span>اللفل 🆙</span><b>${String(p.level).padStart(2,'0')}</b></div>
+ <div class="row"><span>الاكس بي</span><b>${fmt(p.xp)}/${fmt(p.level*1000)} Xp</b></div><div class="bar"><i style="width:${Math.min(100,p.xp/(p.level*1000)*100)}%"></i></div>
+ ${Object.keys(C).map(k=>`<div class="row"><span>${C[k][0]}</span><b style="${p[k]<0?'color:var(--red)':''}">${fmt(p[k])} ${C[k][1]}</b></div>`).join('')}
+ ${canEdit()?`<div class="row"><span>🆔 المعرّف</span><b class="code" onclick="cp('${p.pid}')" style="cursor:pointer">${p.pid||'—'}</b></div>`:''}<div class="acts"><button class="btn g s" onclick="selP='${p.id}';render()">📖 القدرات</button>${canEdit()?`<button class="btn s" onclick="adj('${p.id}')">± رصيد</button><button class="btn g s" onclick="setBal('${p.id}')">✍️ ضبط الأرصدة</button>${((S.undo.pl||{})[p.id]||[]).length?`<button class="btn g s" onclick="undoP('${p.id}')">↩️ تراجع</button>`:''}<button class="btn g s" onclick="editP('${p.id}')">✏️ تعديل</button>${canTravel()?`<button class="btn g s" onclick="trav('${p.id}')">${p.traveling?'🏠 إنهاء السفر':'✈️ سفر'}</button>`:''}${canTravel()&&p.traveling?`<button class="btn g s" onclick="lodge('${p.id}')">🛏️ المبيت</button>`:''}${canDel()?`<button class="btn r s" onclick="delP('${p.id}')">🗑</button>`:''}`:''}</div></div>`).join('')||'<p class="mu">لا يوجد لاعبون في هذا العالم بعد.</p>')+`</div>`+(sp?recBox(sp):'');
+}
+function editP(id){
+ const p=S.players.find(x=>x.id===id)||{name:'',level:1,xp:0,xpMax:100};
+ modal(id?'تعديل لاعب':'لاعب جديد',`<label>الاسم</label><input id="a" value="${esc(p.name)}"><label>اللفل</label><input id="b" type="number" value="${p.level}"><label>الاكس بي الحالي (المطلوب للترقية: اللفل × 1000)</label><input id="d" type="number" value="${p.xp}"><label>الفئة</label><select id="f">${['هجومي','متوازن','دفاعي'].map(c=>`<option ${c===(p.cat||'متوازن')?'selected':''}>${c}</option>`).join('')}</select>`,'حفظ',()=>{
+  const n=$('a').value.trim();if(!n)return toast('أدخل الاسم');
+  const lv=Math.max(1,Math.floor(+$('b').value)||1);const o={name:n,cat:$('f').value,level:lv,xp:Math.min(Math.max(0,+$('d').value||0),lv*1000-1)};
+  if(id){Object.assign(p,o);addLog(world,'تعديل بيانات اللاعب '+n)}else{S.players.push({id:'p'+Date.now(),pid:newPid(),world,coins:0,gems:0,gp:0,usd:0,...o});addLog(world,'إضافة لاعب جديد: '+n)}
+  save();closeM();render()});
+}
+function delP(id){const p=S.players.find(x=>x.id===id);if(p.staff)return toast('هذا سجل رتبة ولا يُحذف');modal('حذف لاعب',`<p>حذف سجل <b>${esc(p.name)}</b> نهائياً؟</p>`,'حذف',()=>{S.players=S.players.filter(x=>x.id!==id);addLog(world,'حذف اللاعب '+p.name);save();closeM();render()})}
+function adj(id){
+ const p=S.players.find(x=>x.id===id);
+ modal('رصيد '+esc(p.name),`<label>العملة</label><select id="a">${Object.keys(C).map(k=>`<option value="${k}">${C[k][1]} ${C[k][0]}</option>`).join('')}<option value="xp">✨ الاكس بي (XP)</option></select><label>العملية</label><select id="b"><option value="1">إضافة</option><option value="-1">خصم</option></select><label>المبلغ</label><input id="d" type="number" step="any" min="0"><label>السبب</label><input id="e">`,'تنفيذ',()=>{
+  const k=$('a').value,s=+$('b').value,v=+$('d').value;
+  if(!(v>0))return toast('أدخل مبلغاً صحيحاً');
+  if(p[k]+s*v<0)return toast('الرصيد لا يكفي');
+  p[k]+=s*v;let up=0,l0=p.level;if(k==='xp'){while(p.xp>=p.level*1000){p.xp-=p.level*1000;p.level++}up=p.level-l0}addLog(world,`${s>0?'إضافة':'خصم'} ${fmt(v)} ${k==='xp'?'XP':C[k][0]} ${s>0?'إلى':'من'} ${p.name}${$('e').value?' — '+$('e').value:''}${up?' (ترقية من لفل '+l0+' إلى لفل '+p.level+')':''}`);if(up)toast('🆙 ترقية إلى لفل '+p.level);
+  save();closeM();render();if(!up)toast('تمت العملية')});
+}
+
+const ORD=['الأول','الثاني','الثالث','الرابع','الخامس','السادس','السابع','الثامن','التاسع','العاشر'];
+const lines=t=>t.split('\n').map(x=>x.trim()).filter(Boolean);
+let curRec='';
+function getRec(p){if(!p.rec)p.rec={awak:0,pack:'',ab:'',bass:'',res:[],comps:[],gear:[],seasons:[{great:[],real:[],special:[]},{great:[],real:[],special:[]}]};return p.rec}
+function recText(p){
+ const r=getRec(p),b=a=>a.length?a.map(x=>'• '+x).join('\n'):'•',n=a=>a.length?a.map((x,i)=>(i+1)+'- '+x).join('\n'):'1-';
+ const ss=f=>r.seasons.map((s,i)=>`المـوسـم ${ORDS[i]||ORD[i]||(i+1)} :\n${f(s)}`).join('\n');
+ return `╔══════ ✦ سِـجِـلّ الـلاعـب ✦ ══════╗\n\n◈ الإسـم : ${p.name}\n◈ الـعـالـم : ${W[p.world].n}\n◈ الـفـئـة : ${p.cat||''}\n◈ الإسـتـفـاقـة : ${r.awak}\n◈ الـحـزم : ${r.pack}\n◈ الآب : ${r.ab}\n◈ الـبـاس : ${r.bass}\n\n◈ الـمـمـتـلـكـات :\n• الـمـوارد :\n${b(r.res)}\n• الـمـرافـقـون :\n${b(r.comps)}\n• الـمـعـدات :\n${b(r.gear)}\n✦ سِـجِـلّ الـمـواسـم ✦\n\n◈ الـقـدـرات الـعـظـيـمـة :\n${ss(s=>n(s.great))}\n\n◈ الـقـدـرات الـحـقـيـقـيـة :\n${ss(s=>n(s.real))}\n\n◈ الـقـدـرات الـمـمـيـزة :\n${ss(s=>b(s.special))}`}
+function rec(id){
+ const p=S.players.find(x=>x.id===id);curRec=recText(p);
+ modal('📖 سجل القدرات',`<div style="white-space:pre-wrap;line-height:1.9;font-size:.9rem">${esc(curRec)}</div>`,canEdit()?'✏️ تعديل':'إغلاق',()=>canEdit()?editRec(id):closeM());
+ $('mb').querySelector('.acts').insertAdjacentHTML('beforeend','<button class="btn g" onclick="cpRec()">نسخ</button>');
+}
+function cpRec(){try{navigator.clipboard.writeText(curCopy||curRec);toast('تم النسخ')}catch(e){toast('تعذّر النسخ')}}
+function collect(p){const r=getRec(p);r.awak=$('ra').value;r.pack=$('rp').value;r.ab=$('rb').value;r.bass=$('rs').value;r.res=lines($('rr').value);r.comps=lines($('rc').value);r.gear=lines($('rg').value);r.seasons.forEach((s,i)=>{s.great=lines($('g'+i).value);s.real=lines($('h'+i).value);s.special=lines($('k'+i).value)})}
+function addSeason(id){const p=S.players.find(x=>x.id===id);collect(p);getRec(p).seasons.push({great:[],real:[],special:[]});save();editRec(id)}
+function editRec(id){if(!rs0[id])rs0[id]=JSON.stringify(getRec(S.players.find(x=>x.id===id)));
+ const p=S.players.find(x=>x.id===id),r=getRec(p),j=a=>esc(a.join('\n')),
+ T=(i,l,v)=>`<label>${l}</label><textarea id="${i}" rows="3">${j(v)}</textarea>`;
+ modal('تعديل سجل '+esc(p.name),
+ `<label>الإستفاقة</label><input id="ra" value="${esc(r.awak)}"><label>الحزم</label><input id="rp" value="${esc(r.pack)}"><label>الآب</label><input id="rb" value="${esc(r.ab)}"><label>الباس</label><input id="rs" value="${esc(r.bass)}">`+T('rr','الموارد (كل عنصر في سطر)',r.res)+T('rc','المرافقون',r.comps)+T('rg','المعدات',r.gear)+
+ r.seasons.map((s,i)=>`<h3 style="margin:8px 0">الموسم ${ORD[i]||i+1}</h3>`+T('g'+i,'القدرات العظيمة',s.great)+T('h'+i,'القدرات الحقيقية',s.real)+T('k'+i,'القدرات المميزة',s.special)).join('')+
+ `<button class="btn g s" onclick="addSeason('${id}')">➕ إضافة موسم</button>`,'حفظ',()=>{collect(p);if(!recDiff(p,rs0[id],'تعديل'))toast('لا يوجد تغيير');save();closeM();render()});
+}
+function undoOp(){
+ const st=S.undo[world]||[];if(!st.length)return toast('لا توجد عملية للتراجع');
+ const e=st[st.length-1];
+ modal('↩️ تراجع',`<p>التراجع عن آخر عملية في عالم ${W[world].n}:</p><p><b>${esc(e.d)}</b></p>`,'تراجع',()=>{
+  const x=JSON.parse(e.s);S.undo[world].pop();
+  {const ids=new Set(x.players.map(p=>p.id));S.players=S.players.filter(p=>p.world!==world&&!ids.has(p.id)).concat(x.players)}S.vaults[world]=x.vault;S.log=S.log.filter(l=>l.w!==world).concat(x.log);
+  S.log.unshift({t:new Date().toLocaleString('ar-EG'),w:world,by:label(sess),s:'تراجع عن: '+e.d});
+  noPush=true;save();noPush=false;closeM();render();toast('تم التراجع')});
+}
+function bulk(){
+ const L=wp();if(!L.length)return toast('لا يوجد لاعبون');
+ modal('👥 عملية جماعية',`<label>اللاعبون</label><div style="max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px;margin:4px 0 10px"><label style="display:block;color:var(--gold)"><input type="checkbox" style="width:auto;margin:0 0 0 6px" onchange="document.querySelectorAll('.bk').forEach(c=>c.checked=this.checked)">تحديد الكل</label>${L.map(p=>`<label style="display:block;color:var(--tx)"><input type="checkbox" class="bk" value="${p.id}" style="width:auto;margin:0 0 0 6px">${esc(p.name)}</label>`).join('')}</div><label>العملية</label><select id="b"><option value="1">إضافة</option><option value="-1">خصم</option></select><label>المبلغ لكل لاعب (اترك العملة الفارغة لتتخطاها)</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:0 8px">${[...Object.keys(C),'xp'].map(k=>`<div><label>${k==='xp'?'✨ XP':C[k][1]+' '+C[k][0]}</label><input class="bv" data-k="${k}" type="number" step="any" min="0"></div>`).join('')}</div><label>السبب</label><input id="e">`,'تنفيذ',()=>{
+  const ids=[...document.querySelectorAll('.bk:checked')].map(c=>c.value),s=+$('b').value,vs=[...document.querySelectorAll('.bv')].map(i=>[i.dataset.k,+i.value]).filter(x=>x[1]>0);
+  if(!ids.length)return toast('اختر لاعباً واحداً على الأقل');if(!vs.length)return toast('أدخل مبلغاً لعملة واحدة على الأقل');
+  const done=[],skip=[];
+  ids.forEach(id=>{const p=S.players.find(x=>x.id===id);if(vs.some(([k,v])=>p[k]+s*v<0)){skip.push(p.name);return}vs.forEach(([k,v])=>{p[k]+=s*v});while(p.xp>=p.level*1000){p.xp-=p.level*1000;p.level++}done.push(p.name)});
+  if(!done.length)return toast('لا يمكن تنفيذها على المحددين (رصيد غير كافٍ أو مسافرون)');
+  addLog(world,`${s>0?'إضافة':'خصم'} ${vs.map(([k,v])=>fmt(v)+' '+(k==='xp'?'XP':C[k][0])).join(' + ')} ${s>0?'إلى':'من'} ${done.length} لاعبين: ${done.join('، ')}${$('e').value?' — '+$('e').value:''}${skip.length?' (تخطي: '+skip.join('، ')+')':''}`);
+  closeM();render();toast(skip.length?`تم لـ ${done.length}، وتخطي ${skip.length}`:'تمت العملية لـ '+done.length+' لاعبين')});
+}
+const TN={great:'عظيمة',real:'حقيقية',special:'مميزة',res:'مورد',comps:'مرافق',gear:'معدات',ab:'الآب',pack:'الحزمة'};
+const shopTypes=()=>{const k=kind();if(k==='resMerchant')return['res'];if(k==='kdMerchant')return['ab','pack'];return world==='kingdom'?['comps','gear','res','ab','pack']:['great','real','special']};
+function shopT(){const t=$('st').value;$('ssw').style.display=['great','real','special'].includes(t)?'':'none'}
+function vShop(){
+ const L=wp();
+ const ms=Math.max(2,...L.map(p=>getRec(p).seasons.length));
+ $('v').innerHTML=L.length?`<div class="card"><h3>🛒 شراء</h3><label>اللاعب</label><select id="sp">${L.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><label>الاسم (قدرة / مورد / مرافق / معدات / آب / حزمة)</label><input id="sn"><label>النوع</label><select id="st" onchange="shopT()">${shopTypes().map(t=>`<option value="${t}">${TN[t]}</option>`).join('')}</select><div id="ssw"><label>الموسم</label><select id="ss">${Array.from({length:ms},(_,i)=>`<option value="${i}" ${i===ms-1?'selected':''}>${ORD[i]||i+1}</option>`).join('')}</select></div><label>السعر</label><div style="display:flex;gap:8px"><input id="sv" type="number" min="0" step="any"><select id="sc">${Object.keys(C).map(k=>`<option value="${k}">${C[k][1]} ${C[k][0]}</option>`).join('')}</select></div><button class="btn" onclick="buy()">شراء</button></div>`:'<p class="mu">لا يوجد لاعبون في هذا العالم بعد.</p>';
+ if($('st'))shopT();
+}
+function buy(){
+ const p=S.players.find(x=>x.id===$('sp').value),n=$('sn').value.trim(),t=$('st').value,i=+$('ss').value,v=+$('sv').value,k=$('sc').value;
+ if(!p)return toast('اختر لاعباً');if(!shopTypes().includes(t))return toast(kind()==='resMerchant'?'تاجر الموارد يبيع الموارد فقط':'هذا النوع لا تملك بيعه');if(!n)return toast('اكتب اسم القدرة');if(!(v>0))return toast('أدخل السعر');
+ if(p[k]<v)return toast('رصيد اللاعب لا يكفي ('+fmt(p[k])+' '+C[k][1]+')');
+ const r=getRec(p),ab=t==='ab'||t==='pack';const ls=['res','comps','gear'].includes(t);if(!ab&&!ls)while(r.seasons.length<=i)r.seasons.push({great:[],real:[],special:[]});
+ const o0=JSON.stringify(r);p[k]-=v;if(ab){const c=String(r[t]??'').trim();r[t]=(!c||['0','—','-'].includes(c))?n:c+'، '+n}else(ls?r[t]:r.seasons[i][t]).push(n);recDiff(p,o0,'شراء',true);
+ addLog(world,`${t==='res'?'شراء مورد':ls||ab?'شراء '+TN[t]:'شراء قدرة '+TN[t]} "${n}" للاعب ${p.name} بسعر ${fmt(v)} ${C[k][0]}${ls||ab?'':' (الموسم '+(ORD[i]||i+1)+')'}`);
+ render();toast('تم الشراء وأضيفت القدرة لسجل '+p.name);
+}
+const nz=s=>s.replace(/[\u0640\u064B-\u065F]/g,'').replace(/[أإآ]/g,'ا').replace(/\u08AA/g,'ر').replace(/ى/g,'ي');
+function parseRec(p,t){
+ const r=getRec(p),f={res:[],comps:[],gear:[]},sd={great:[],real:[],special:[]},MS={'الموارد':'res','المرافقون':'comps','المعدات':'gear'},QS={'العظيمة':'great','الحقيقية':'real','المميزة':'special'};
+ let mode=null,si=-1;
+ t.split('\n').forEach(raw=>{
+  const l=raw.trim();if(!l)return;const n=nz(l);let m;
+  if(/^[╔╚]/.test(l)||n.includes('سجل اللاعب')||n.includes('سجل المواسم')||n.includes('الممتلكات')||n.includes('ملاحظات اضافية')){mode=null;return}
+  if(/^◈?\s*(الاسم|العالم)\s*:/.test(n))return;
+  if(m=n.match(/^◈?\s*(الفئة|الاستفاقة|الحزم|الاب|الباس)\s*:/)){
+   const v=l.slice(l.indexOf(':')+1).trim();
+   if(m[1]==='الفئة'){if(['هجومي','متوازن','دفاعي'].includes(v))p.cat=v}
+   else if(m[1]==='الاستفاقة')r.awak=v;else if(m[1]==='الحزم')r.pack=v;else if(m[1]==='الاب')r.ab=v;else r.bass=v;
+   mode=null;return}
+  if(m=n.match(/^[•◈]?\s*(الموارد|المرافقون|المعدات)\s*:?\s*$/)){mode=MS[m[1]];si=-1;return}
+  if(m=n.match(/^◈?\s*القدرات\s+(العظيمة|الحقيقية|المميزة)\s*:?\s*$/)){mode=QS[m[1]];si=-1;return}
+  if(/^الموسم/.test(n)&&mode&&!f[mode]){si++;sd[mode][si]=sd[mode][si]||[];return}
+  if(!mode)return;
+  const it=l.replace(/^(\d+\s*[-.)]|[•◈*-])\s*/,'').trim();if(!it)return;
+  if(f[mode])f[mode].push(it);else{if(si<0){si=0;sd[mode][0]=sd[mode][0]||[]}sd[mode][si].push(it)}
+ });
+ const cnt=Math.max(1,sd.great.length,sd.real.length,sd.special.length);
+ r.res=f.res;r.comps=f.comps;r.gear=f.gear;
+ r.seasons=Array.from({length:cnt},(_,i)=>({great:sd.great[i]||[],real:sd.real[i]||[],special:sd.special[i]||[]}));
+}
+function editRaw(id){
+ const p=S.players.find(x=>x.id===id);
+ modal('📝 تعديل نصي حر — '+esc(p.name),`<p class="mu">عدّل النص كما تشاء مع إبقاء عناوين الأقسام. الاسم والعالم يؤخذان من بيانات اللاعب، وأي سطر خارج الأقسام المعروفة لا يُحفظ.</p><textarea id="rw" rows="18" style="line-height:1.7">${esc(recText(p))}</textarea>`,'حفظ',()=>{
+  const o0=JSON.stringify(getRec(p));parseRec(p,$('rw').value);if(!recDiff(p,o0,'تعديل نصي'))toast('لا يوجد تغيير');closeM();render()});
+}
+function myRec(){const k=kind()==='deputyOwner'?'deputyOwner':kind()==='king'?'king:'+wd():null;return k&&S.players.find(x=>x.staff===k)}
+function ensureStaff(){let ch=false;Object.keys(S.roles).forEach(k=>{const[a,w]=k.split(':');if(a!=='deputyOwner'&&a!=='king')return;if(S.players.some(p=>p.staff===k))return;S.players.push({id:'s_'+k.replace(':','_'),pid:newPid(),staff:k,world:a==='king'?w:'sys',name:label(k),cat:'متوازن',level:1,xp:0,coins:0,gems:0,gp:0,usd:0});ch=true});return ch}
+function fillMine(){
+ const me=myRec();if(!me)return toast('لا يوجد سجل خاص بك');
+ modal('تعبئة الخزنة من رصيدي',`<p class="mu">رصيدك: ${K.map(k=>fmt(me[k])+' '+C[k][1]).join(' · ')}</p><label>العملة</label><select id="a">${K.map(k=>`<option value="${k}">${C[k][1]} ${C[k][0]}</option>`).join('')}</select><label>العملية</label><select id="b"><option value="1">تعبئة من رصيدي</option><option value="-1">سحب إلى رصيدي</option></select><label>المبلغ</label><input id="d" type="number" min="0" step="any">`,'تنفيذ',()=>{
+  const k=$('a').value,s=+$('b').value,x=+$('d').value,v=S.vaults[world];
+  if(!(x>0))return toast('أدخل مبلغاً صحيحاً');
+  if(s>0&&me[k]<x)return toast('رصيدك لا يكفي');
+  if(s<0&&v[k]<x)return toast('رصيد الخزنة لا يكفي');
+  me[k]-=s*x;v[k]+=s*x;
+  addLog(world,`${s>0?'تعبئة':'سحب'} ${fmt(x)} ${C[k][0]} ${s>0?'في الخزنة من':'من الخزنة إلى'} رصيد ${me.name}`);closeM();render();toast('تمت العملية');
+ });
+}
+let profAsked=false;
+function askProfile(){
+ const m=myRec();if(!m||m.ready||profAsked)return;profAsked=true;
+ modal('👋 أكمل سجلك',`<p class="mu">${label(sess)}</p><label>الاسم</label><input id="pn" value="${esc(m.name!==label(sess)?m.name:'')}"><label>الفئة</label><select id="pc">${['هجومي','متوازن','دفاعي'].map(c=>`<option ${c===m.cat?'selected':''}>${c}</option>`).join('')}</select>`,'حفظ',()=>{
+  const n=$('pn').value.trim();if(!n)return toast('اكتب اسمك');
+  m.name=n;m.cat=$('pc').value;m.ready=true;addLog(m.world,'إكمال سجل '+label(m.staff)+' باسم '+n);closeM();render()});
+}
+const nkey=s=>nz(String(s)).replace(/\s+/g,'');
+function parseTG(t){
+ const nm=s=>s.replace(/[\u0640\u064B-\u065F]/g,'').replace(/\u08AA/g,'ر').replace(/[\u06A9\u06AA]/g,'ك');
+ const num=s=>{s=String(s);const m=s.match(/[\d,.]+/);if(!m)return 0;const v=+m[0].replace(/,/g,'')||0;return /[-−–]/.test(s)?-v:v};
+ const usd=s=>{const m=String(s).match(/[\d,.]+/);return m?(+m[0].replace(',','.')||0):0};
+ const out=[];let cur=null,vault=null,inV=false;
+ t.split('\n').forEach(raw=>{
+  const l=nm(raw).trim();if(!l)return;const n=nz(l);
+  if(n.includes('خزنة')){inV=true;vault={coins:0,gems:0,gp:0};cur=null;return}
+  const m=n.match(/(اللاعب|اللفل|الاكس بي|الكوينز|الجواهر|الجي بي|الدولار)\s*:\s*(.*)$/);if(!m)return;
+  const v=l.slice(l.indexOf(':')+1).trim(),k=m[1];
+  if(k==='اللاعب'){cur={name:v.replace(/\([^)]*\)/g,'').replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu,'').trim(),level:1,xp:0,coins:0,gems:0,gp:0,usd:0};out.push(cur);inV=false;return}
+  const T=inV?vault:cur;if(!T)return;
+  if(k==='اللفل')T.level=Math.max(1,num(v));
+  else if(k==='الاكس بي')T.xp=num(v.includes('/')?v.split('/')[1]:v);
+  else if(k==='الكوينز')T.coins=num(v);
+  else if(k==='الجواهر')T.gems=num(v);
+  else if(k==='الجي بي')T.gp=num(v);
+  else if(k==='الدولار'&&!inV)T.usd=usd(v);
+ });
+ out.forEach(p=>{p.xp=Math.min(p.xp,p.level*1000-1)});
+ return{players:out.filter(p=>p.name),vault};
+}
+function importTG(){
+ modal('📥 استيراد من تيليجرام',`<p class="mu">الصق نص سجل العالم (اللاعبون والخزنة). سيُستورد إلى عالم ${W[world].n}، ومن لديه اسم مطابق تُعدّل أرصدته.</p><textarea id="tg" rows="12" placeholder="الصق النص هنا"></textarea>`,'معاينة',()=>{
+  const r=parseTG($('tg').value);if(!r.players.length&&!r.vault)return toast('لم أجد لاعبين في النص');
+  const ex=name=>S.players.find(p=>p.world===world&&nkey(p.name)===nkey(name));
+  const nw=r.players.filter(q=>!ex(q.name)).length,up=r.players.length-nw,vv=r.vault&&canFill();
+  modal('معاينة الاستيراد',`<p>🆕 ${nw} جديد · ✏️ ${up} تعديل${vv?' · 🏦 الخزنة':''}</p><div style="max-height:40vh;overflow:auto">${r.players.map(q=>`<div class="row"><span>${esc(q.name)}</span><b>${ex(q.name)?'✏️':'🆕'} لفل ${q.level} · ${fmt(q.xp)} xp · ${fmt(q.coins)}💰 ${fmt(q.gems)}💎 ${fmt(q.gp)}💲</b></div>`).join('')}</div>${vv?`<div class="row"><span>🏦 الخزنة</span><b>${fmt(r.vault.coins)}💰 ${fmt(r.vault.gems)}💎 ${fmt(r.vault.gp)}💲</b></div>`:''}`,'استيراد',()=>{
+   r.players.forEach((q,i)=>{const e=ex(q.name);if(e)Object.assign(e,{level:q.level,xp:q.xp,coins:q.coins,gems:q.gems,gp:q.gp,usd:q.usd});else S.players.push({id:'p'+Date.now()+'_'+i,pid:newPid(),world,cat:'متوازن',...q})});
+   if(vv)Object.assign(S.vaults[world],r.vault);
+   addLog(world,`استيراد من تيليجرام: ${nw} لاعب جديد، ${up} تعديل على لاعبين موجودين${vv?'، وتحديث الخزنة':''}`);
+   closeM();render();toast('تم الاستيراد');
+  });
+ });
+}
+const cleanName=s=>String(s).replace(/[\u0640\u064B-\u065F]/g,'').replace(/\u08AA/g,'ر').replace(/[\u06A9\u06AA]/g,'ك');
+function splitRecs(t){
+ const blocks=[];let cur=null;
+ t.split('\n').forEach(raw=>{
+  if(/^◈?\s*الاسم\s*:/.test(nz(raw).trim())){cur={name:cleanName(raw.slice(raw.indexOf(':')+1)).replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu,'').trim(),lines:[]};blocks.push(cur)}
+  if(cur)cur.lines.push(raw);
+ });
+ return blocks.filter(b=>b.name).map(b=>({name:b.name,text:b.lines.join('\n')}));
+}
+function importRec(){
+ modal('📖 استيراد سجلات القدرات',`<p class="mu">الصق سجلات قدرات كثيرة متتالية (كل سجل يبدأ بسطر "الإسم : ..."). يُطابق كل سجل مع لاعب بنفس الاسم في عالم ${W[world].n}.</p><textarea id="tr" rows="12" placeholder="الصق النص هنا"></textarea>`,'معاينة',()=>{
+  const bl=splitRecs($('tr').value);if(!bl.length)return toast('لم أجد أي سجل (تأكد من وجود سطر الإسم)');
+  const ex=name=>S.players.find(p=>p.world===world&&nkey(cleanName(p.name))===nkey(cleanName(name)));
+  const ok=bl.filter(b=>ex(b.name)),no=bl.filter(b=>!ex(b.name));
+  modal('معاينة الاستيراد',`<p>✅ ${ok.length} مطابق · ❌ ${no.length} غير موجود</p><div style="max-height:40vh;overflow:auto">${bl.map(b=>`<div class="row"><span>${esc(b.name)}</span><b>${ex(b.name)?'✏️ تعديل على سجله الحالي':'❌ لا يوجد لاعب بهذا الاسم'}</b></div>`).join('')}</div>${no.length?'<p class="mu">المستبعدون لن يُستوردوا؛ أنشئهم أولاً أو صحّح الاسم ثم أعد المحاولة.</p>':''}<p class="mu">سجل القدرات لكل لاعب مطابق سيُستبدل بالمستورد.</p>`,'استيراد',()=>{
+   if(!ok.length)return toast('لا يوجد ما يُستورد');
+   ok.forEach(b=>{const pp=ex(b.name),o0=JSON.stringify(getRec(pp));parseRec(pp,b.text);recDiff(pp,o0,'استيراد',true)});
+   addLog(world,`استيراد سجلات قدرات ${ok.length} لاعب: ${ok.map(b=>b.name).join('، ')}${no.length?' (غير موجودين: '+no.map(b=>b.name).join('، ')+')':''}`);
+   closeM();render();toast('تم استيراد السجلات');
+  });
+ });
+}
+const XR0=[['gems',200,'coins',50000],['gp',50,'coins',100000],['coins',200000,'gp',50],['coins',100000,'gems',200]];const getXR=()=>S.xr||XR0;
+function vXch(){
+ const ds=kind()==='deputyOwner';
+ const L=ds?S.players.filter(p=>p.staff==='deputyOwner'):wp();
+ $('v').innerHTML=(kind()==='owner'?`<button class="btn g s" onclick="xrM()" style="margin-bottom:10px">⚙️ تعديل الأسعار</button>`:'')+(L.length?`<div class="card"><h3>💱 الصرف</h3><label>${ds?'سجلك':'اللاعب'}</label><select id="xp">${L.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><label>العملية</label><select id="xr">${getXR().map((r,i)=>`<option value="${i}">${fmt(r[1])} ${C[r[0]][1]} ← ${fmt(r[3])} ${C[r[2]][1]}</option>`).join('')}</select><label>عدد المرات</label><input id="xn" type="number" min="1" step="1" value="1"><button class="btn" onclick="xchg()">صرف</button></div>`:'<p class="mu">لا يوجد سجل للصرف.</p>');
+}
+function xchg(){
+ if(!['owner','king','deputyOwner'].includes(kind()))return;
+ const ds=kind()==='deputyOwner';
+ const p=S.players.find(x=>x.id===$('xp').value);if(!p||(ds&&p.staff!=='deputyOwner')||(!ds&&p.world!==world))return toast('لاعب غير صالح');
+ const r=getXR()[+$('xr').value],n=Math.floor(+$('xn').value);
+ if(!(n>=1))return toast('أدخل عدد مرات صحيحاً');
+ const cost=r[1]*n,gain=r[3]*n;
+ if(p[r[0]]<cost)return toast('الرصيد لا يكفي: يلزم '+fmt(cost)+' '+C[r[0]][1]);
+ p[r[0]]-=cost;p[r[2]]+=gain;
+ addLog(p.world,`صرف ${fmt(cost)} ${C[r[0]][0]} إلى ${fmt(gain)} ${C[r[2]][0]} للاعب ${p.name}`);
+ render();toast('تم الصرف');
+}
+const canTravel=()=>['owner','deputyOwner','king'].includes(kind());
+let curCopy='';
+function cardText(p){
+ return `اللاعـــب : 🔰 ${p.name} 🔰${p.traveling?' (مسافر)':''}\nالـلــفـــل : ${String(p.level).padStart(2,'0')} 🆙\nالاكس بي: ${fmt(p.level*1000)}/${fmt(p.xp)} Xp\nالكـــويـــنز : ${fmt(p.coins)} 💰\nالجــواهـر : ${fmt(p.gems)} 💎\nالجـي بـي : ${fmt(p.gp)} 💲\nالدولار : ${p.usd?fmt(p.usd):'00'} 💸`;
+}
+const ORDS=['الأول','الـثـانـي','الـثـالـث','الـرابـع','الـخـامـس','الـسـادـس','الـسـابـع','الـثـامـن','الـتـاسـع','الـعـاشـر'];
+function showCopy(p){
+ curCopy=cardText(p)+'\n\n'+recText(p);
+ modal('✈️ سجل المسافر',`<div style="white-space:pre-wrap;line-height:1.8;font-size:.85rem;max-height:50vh;overflow:auto">${esc(curCopy)}</div>`,'نسخ',()=>{cpRec();closeM()});
+}
+function trav(id){
+ const p=S.players.find(x=>x.id===id);if(!p||!canTravel())return;
+ if(!p.traveling){
+  modal('✈️ سفر '+esc(p.name),`<label>الوجهة (تذكرة ذهاب)</label><select id="td">${S.dests.map((d,i)=>`<option value="${i}">${isKdD(d)?'🏰 ':''}${esc(d.n)} — ${fmt(d.price)} 💰 · مبيت ${fmt(d.night??5000)}/يوم</option>`).join('')}</select><p class="mu">رصيده: ${fmt(p.coins)} 💰. تُخصم قيمة التذكرة منه، وللعودة تذكرة بالسعر نفسه.</p>`,'سفر',()=>{
+   const d=S.dests[+$('td').value];if(!d)return;
+   if(p.coins<d.price)return toast('رصيد الكوينز لا يكفي لتذكرة الذهاب');
+   p.coins-=d.price;p.traveling=true;p.dest=d.n;p.fare=d.price;p.tstart=Date.now();p.lodged=0;p.lodgeSum=0;p.night=d.night??5000;
+   const ow=p.world;addLog(ow,`سفر اللاعب ${p.name} إلى ${d.n} (تذكرة ${fmt(d.price)} كوينز)`);if(isKdD(d)){p.origin=ow;p.world='kingdom';addLog('kingdom',`وصول اللاعب ${p.name} (${W[ow].n}) إلى المملكة`,ow)}closeM();render();showCopy(p);
+  });
+ }else{
+  lodgeTick();
+  modal('🏠 عودة '+esc(p.name),`<p>يعود اللاعب من ${esc(p.dest||'')} بسجله الحالي كما هو بعد كل التعديلات التي طُبقت عليه.</p><div class="card" style="padding:10px"><div class="row"><span>تذكرة العودة</span><b>${fmt(p.fare||0)} 💰</b></div><div class="row"><span>المبيت (خُصم تلقائياً)</span><b>${fmt(p.lodgeSum||0)} 💰</b></div></div><p class="mu">تُخصم تذكرة العودة الآن، ويجوز أن يعود رصيده بالناقص (ديون).</p>`,'تأكيد العودة',()=>{
+   lodgeTick();const fare=p.fare||0,ls=p.lodgeSum||0;
+   p.coins-=fare;const d=p.dest;p.traveling=false;delete p.dest;delete p.fare;delete p.tstart;delete p.lodged;delete p.lodgeSum;delete p.night;
+   const ow2=p.origin;if(ow2){p.world=ow2;delete p.origin}
+   const rt=`عودة اللاعب ${p.name} من ${d||''} (تذكرة ${fmt(fare)} كوينز، مبيت ${fmt(ls)} كوينز)`;addLog(p.world,rt);if(ow2)addLog('kingdom',rt,ow2);closeM();render();toast('عاد اللاعب بسجله المحدّث');
+  });
+ }
+}
+let dr=[];
+function ctrlM(){modal('⚙️ التحكم',`<p class="mu">إعدادات عامة خارج العوالم، وأي تغيير فيها يطبَّق على كل العوالم.</p><button class="btn g" onclick="destM()">🧭 الوجهات</button>`,'إغلاق',closeM)}
+function destM(){dr=S.dests.map(d=>({...d}));drawD()}
+function colD(){dr.forEach((d,i)=>{d.n=$('dn'+i).value;d.price=+$('dp'+i).value||0;d.night=+$('dq'+i).value||0;d.kingdom=$('dk'+i).checked})}
+function addD(){colD();dr.push({n:'',price:10000,night:5000,kingdom:false});drawD()}
+function delD(i){colD();dr.splice(i,1);drawD()}
+function drawD(){
+ modal('🧭 وجهات السفر',`<p class="mu">سعر التذكرة يُخصم عند الذهاب وعند العودة (بالكوينز).</p>${dr.map((d,i)=>`<div style="display:flex;gap:6px"><input id="dn${i}" value="${esc(d.n)}" placeholder="اسم المكان"><input id="dp${i}" type="number" min="0" value="${d.price}" style="max-width:110px"><input id="dq${i}" type="number" min="0" value="${d.night??5000}" style="max-width:90px"><label style="display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="dk${i}" ${isKdD(d)?'checked':''} style="width:auto;margin:0">🏰</label><button class="btn r s" onclick="delD(${i})">🗑</button></div>`).join('')}<p class="mu">الحقل الأول: سعر التذكرة، والثاني: سعر المبيت لكل 24 ساعة، والمربع 🏰: ينقل سجل المسافر إلى عالم المملكة.</p><button class="btn g s" onclick="addD()">➕ وجهة جديدة</button>`,'حفظ',()=>{
+  colD();const v=dr.filter(d=>d.n.trim());if(!v.length)return toast('أبقِ وجهة واحدة على الأقل');
+  S.dests=v.map(d=>({n:d.n.trim(),price:Math.max(0,+d.price||0),night:Math.max(0,d.night??5000),kingdom:!!d.kingdom}));addLog('all','تعديل وجهات السفر');closeM();render();
+ });
+}
+let xd=[];
+const CUR=['coins','gems','gp','usd'];
+function xrM(){xd=getXR().map(r=>[...r]);drawX()}
+function colX(){xd.forEach((r,i)=>{r[0]=$('xa'+i).value;r[1]=+$('xb'+i).value||0;r[2]=$('xc'+i).value;r[3]=+$('xd'+i).value||0})}
+function addX(){colX();xd.push(['gems',100,'coins',25000]);drawX()}
+function delX(i){colX();xd.splice(i,1);drawX()}
+function drawX(){
+ const op=v=>CUR.map(k=>`<option value="${k}" ${k===v?'selected':''}>${C[k][1]}</option>`).join('');
+ modal('⚙️ أسعار الصرف',`<p class="mu">كل سطر: كمية من عملة تعطيك كمية من عملة أخرى.</p>${xd.map((r,i)=>`<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px"><input id="xb${i}" type="number" min="0" step="any" value="${r[1]}" style="flex:1;min-width:0;margin:0"><select id="xa${i}" style="width:64px;margin:0">${op(r[0])}</select><span>←</span><input id="xd${i}" type="number" min="0" step="any" value="${r[3]}" style="flex:1;min-width:0;margin:0"><select id="xc${i}" style="width:64px;margin:0">${op(r[2])}</select><button class="btn r s" onclick="delX(${i})">🗑</button></div>`).join('')}<button class="btn g s" onclick="addX()">➕ سعر جديد</button>`,'حفظ',()=>{
+  colX();const v=xd.filter(r=>r[1]>0&&r[3]>0&&r[0]!==r[2]);if(!v.length)return toast('أبقِ سعراً صحيحاً واحداً على الأقل');
+  S.xr=v;addLog('all','تعديل أسعار الصرف');closeM();render();
+ });
+}
+function setBal(id){
+ const p=S.players.find(x=>x.id===id);if(!p||!canEdit())return;
+ modal('✍️ ضبط أرصدة '+esc(p.name),`<p class="mu">اكتب القيمة النهائية لكل عملة (الرصيد الجديد، لا المبلغ المضاف).</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:0 8px">${Object.keys(C).map((k,i)=>`<div><label>${C[k][1]} ${C[k][0]}</label><input id="sb${i}" type="number" step="any" value="${p[k]}"></div>`).join('')}</div><label>السبب</label><input id="sbr">`,'حفظ',()=>{
+  const ch=[];
+  Object.keys(C).forEach((k,i)=>{const raw=$('sb'+i).value;if(raw==='')return;const v=+raw;if(isNaN(v)||v===p[k])return;ch.push(C[k][0]+' '+fmt(p[k])+' ← '+fmt(v));p[k]=v});
+  if(!ch.length)return toast('لا يوجد تغيير');
+  addLog(p.world,'ضبط يدوي لأرصدة '+p.name+': '+ch.join('، ')+($('sbr').value?' — '+$('sbr').value:''));
+  closeM();render();toast('تم ضبط الأرصدة');
+ });
+}
+function lodgeTick(){
+ if(cloud&&!cloudReady)return;
+ let ch=false;const now=Date.now();
+ S.players.forEach(p=>{
+  if(!p.traveling)return;
+  if(!p.tstart){p.tstart=now;p.lodged=0;p.lodgeSum=0;ch=true;return}
+  const n=Math.floor((now-p.tstart)/864e5),k=n-(p.lodged||0);
+  if(k>0){const rate=p.night??5000,amt=rate*k;p.coins-=amt;p.lodged=n;p.lodgeSum=(p.lodgeSum||0)+amt;
+   S.log.unshift({t:new Date().toLocaleString('ar-EG'),w:p.world,o:p.origin,by:'النظام',s:'مبيت '+p.name+': خصم '+fmt(amt)+' كوينز ('+k+' × '+fmt(rate)+') لاستمرار سفره في '+(p.dest||'')});ch=true}
+ });
+ if(ch){capLog();noPush=true;save();noPush=false}
+}
+setInterval(lodgeTick,60000);
+function lodgeNow(p){const rate=p.night??5000,n=Math.floor((Date.now()-(p.tstart||Date.now()))/864e5);return (p.lodgeSum||0)+Math.max(0,n-(p.lodged||0))*rate}
+function lodge(id){
+ const p=S.players.find(x=>x.id===id);if(!p||!p.traveling)return;
+ const rate=p.night??5000,el=Date.now()-(p.tstart||Date.now()),n=Math.floor(el/864e5),rem=864e5-(el%864e5),h=Math.floor(rem/36e5),m=Math.floor(rem%36e5/6e4);
+ modal('🛏️ مبيت '+esc(p.name),`<div class="row"><span>المكان</span><b>${esc(p.dest||'')}</b></div><div class="row"><span>سعر المبيت</span><b>${fmt(rate)} 💰 / 24 ساعة</b></div><div class="row"><span>مضى على سفره</span><b>${Math.floor(el/36e5)} ساعة</b></div><div class="row"><span>ليالٍ محسوبة</span><b>${n}</b></div><div class="row"><span>إجمالي المخصوم</span><b>${fmt(p.lodgeSum||0)} 💰</b></div><div class="row"><span>الخصم القادم بعد</span><b>${h}س ${m}د</b></div><p class="mu">يُخصم المبلغ تلقائياً كل 24 ساعة من رصيده حتى يعود، ويجوز أن يصير رصيده بالناقص.</p>`,'إغلاق',closeM);
+}
+let rs0={};
+function recDiff(p,oldJ,src,silent){
+ const o=JSON.parse(oldJ),n=getRec(p),d=[];
+ const cmp=(a,b,l)=>{(b||[]).forEach(x=>{if(!(a||[]).includes(x))d.push('➕ '+l+': '+x)});(a||[]).forEach(x=>{if(!(b||[]).includes(x))d.push('➖ '+l+': '+x)})};
+ [['res','الموارد'],['comps','المرافقون'],['gear','المعدات']].forEach(([k,l])=>cmp(o[k],n[k],l));
+ [['awak','الإستفاقة'],['pack','الحزم'],['ab','الآب'],['bass','الباس']].forEach(([k,l])=>{if(String(o[k]||'')!==String(n[k]||''))d.push('✏️ '+l+': '+(o[k]||'—')+' ← '+(n[k]||'—'))});
+ const TT={great:'العظيمة',real:'الحقيقية',special:'المميزة'};
+ const os=o.seasons||[],ns=n.seasons||[],m=Math.max(os.length,ns.length);
+ for(let i=0;i<m;i++)['great','real','special'].forEach(t=>cmp((os[i]||{})[t],(ns[i]||{})[t],'القدرات '+TT[t]+' (الموسم '+(ORD[i]||i+1)+')'));
+ if(!d.length)return false;
+ p.recHist=p.recHist||[];
+ p.recHist.unshift({t:new Date().toLocaleString('ar-EG'),by:(sess?label(sess):'النظام'),src,d:d.slice(0,12),more:Math.max(0,d.length-12)});
+ p.recHist=p.recHist.slice(0,15);
+ if(!silent)addLog(p.world,src+' سجل قدرات '+p.name+': '+d.slice(0,6).join('، ')+(d.length>6?' …(+'+(d.length-6)+')':''));
+ return true;
+}
+function recHist(id){
+ const p=S.players.find(x=>x.id===id);if(!p)return;const h=p.recHist||[];
+ modal('🕘 تعديلات سجل '+esc(p.name),h.length?h.map(e=>`<div class="card" style="margin-bottom:8px;padding:10px"><div class="mu">${esc(e.t)} · ${esc(e.by)} · ${esc(e.src)}</div>${e.d.map(x=>`<div style="padding:2px 0">${esc(x)}</div>`).join('')}${e.more?`<div class="mu">… و${e.more} تغييرات أخرى</div>`:''}</div>`).join(''):'<p class="mu">لا توجد تعديلات مسجَّلة بعد. تُسجَّل التعديلات من الآن فصاعداً.</p>','إغلاق',closeM);
+}
+function pBase(){prevP={};S.players.forEach(p=>{prevP[p.id]=JSON.stringify(p)})}
+function pCapture(){
+ S.undo.pl=S.undo.pl||{};
+ const L={name:'الاسم',cat:'الفئة',level:'اللفل',xp:'الاكس بي',coins:'الكوينز',gems:'الجواهر',gp:'الجي بي',usd:'الدولار',traveling:'السفر'};
+ S.players.forEach(p=>{
+  const cur=JSON.stringify(p),prev=prevP[p.id];
+  if(!noPush&&prev&&prev!==cur){
+   const o=JSON.parse(prev),ch=[];
+   Object.keys(L).forEach(k=>{if(JSON.stringify(o[k])!==JSON.stringify(p[k]))ch.push(L[k]+(typeof p[k]==='number'?' '+fmt(o[k]||0)+' ← '+fmt(p[k]):''))});
+   if(JSON.stringify(o.rec)!==JSON.stringify(p.rec))ch.push('سجل القدرات');
+   if(!ch.length)ch.push('تعديل');
+   const st=(S.undo.pl[p.id]=S.undo.pl[p.id]||[]);
+   st.push({t:new Date().toLocaleString('ar-EG'),by:(sess?label(sess):'النظام'),d:ch.join('، '),s:prev});
+   if(st.length>10)st.shift();
+  }
+  prevP[p.id]=cur;
+ });
+}
+function undoP(id){
+ const st=(S.undo.pl||{})[id]||[],e=st[st.length-1],p=S.players.find(x=>x.id===id);
+ if(!e||!p||!canEdit())return;
+ modal('↩️ تراجع عن آخر عملية على '+esc(p.name),`<p class="mu">${esc(e.t)} · ${esc(e.by)}</p><p><b>${esc(e.d)}</b></p><p class="mu">يُعاد هذا اللاعب إلى حالته قبل هذه العملية، دون التأثير على غيره من اللاعبين.</p>`,'تراجع',()=>{
+  const i=S.players.findIndex(x=>x.id===id);if(i<0)return;
+  S.players[i]=JSON.parse(e.s);st.pop();
+  S.log.unshift({t:new Date().toLocaleString('ar-EG'),w:p.world,by:label(sess),s:'تراجع عن آخر عملية على '+p.name+': '+e.d});
+  noPush=true;save();noPush=false;closeM();render();toast('تم التراجع');
+ });
+}
+function parseSalaryTpl(t){
+ const out=[];let cur=null;
+ const em=/[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu;
+ t.split('\n').forEach(raw=>{
+  const l=raw.trim();if(!l)return;const n=nz(l);
+  const val=l.slice(l.indexOf(':')+1).trim();
+  if(/^[◈•]?\s*المستفيد\s*:/.test(n)){cur={name:cleanName(val).replace(em,'').replace(/\s+/g,' ').trim(),role:'',coins:0,gems:0,gp:0,usd:0};out.push(cur);return}
+  if(!cur)return;
+  if(/^[◈•]?\s*المنصب\s*:/.test(n)){cur.role=cleanName(val).replace(em,'').replace(/\s+/g,' ').trim();return}
+  const m=n.match(/^[◈•]?\s*قيمة\s*(الكوينز|الجواهر|الجي بي|الدولار)\s*:/);
+  if(m){const k={'الكوينز':'coins','الجواهر':'gems','الجي بي':'gp','الدولار':'usd'}[m[1]];
+   cur[k]=k==='usd'?(+String(val).replace(/[^\d,.]/g,'').replace(',','.')||0):(+String(val).replace(/[^\d.]/g,'')||0)}
+ });
+ return out.filter(q=>q.name);
+}
+function salTpl(){
+ const head='༺『 ❖ عـمـلـيـة إضـافـة ࢪاتـب ❖ 』༻',blk='◈ الـمـسـتـفـيـد :\n◈ الـمـنـصـب :\n◈ قـيـمـة الـكـويـنـز :',sep='━━━━━━━━━━━━━━';
+ const txt=head+'\n\n'+Array(10).fill(blk).join('\n\n'+sep+'\n\n');
+ try{navigator.clipboard.writeText(txt);toast('تم نسخ القالب الفارغ')}catch(e){modal('◈ القالب',`<div style="white-space:pre-wrap;line-height:1.8;font-size:.85rem">${esc(txt)}</div>`,'إغلاق',closeM)}
+}
+function parseSalary(t){
+ if(nz(t).includes('المستفيد')){
+  const e=parseSalaryTpl(t),vault={coins:0,gems:0,gp:0},pl=[];let hv=false;
+  e.forEach(q=>{if(nz(q.name+' '+q.role).includes('خزنة')){['coins','gems','gp'].forEach(k=>{vault[k]+=q[k]||0});hv=true}else pl.push(q)});
+  return{players:pl,vault:hv?vault:null};
+ }
+ const r=parseTG(t);
+ let pl=r.players.map(q=>({name:q.name,coins:q.coins,gems:q.gems,gp:q.gp,usd:q.usd})),vault=r.vault;
+ if(!pl.length&&!(vault&&(vault.coins||vault.gems||vault.gp))){vault=null;
+  const cm={'💰':'coins','💎':'gems','💲':'gp','💸':'usd'},num=x=>+String(x).replace(/,/g,'')||0;
+  t.split('\n').forEach(raw=>{
+   const l=raw.trim().replace(/^[\s•]*\d+\s*[-.)•]+\s*/,'');if(!l)return;
+   const am={};let m;
+   const re1=/(💰|💎|💲|💸)\s*(\d[\d,.]*)/g,re2=/(\d[\d,.]*)\s*(💰|💎|💲|💸)/g;
+   const add=(e,x)=>{const k=cm[e];am[k]=(am[k]||0)+(k==='usd'?(+String(x).replace(',','.')||0):num(x))};const fi=l.search(/💰|💎|💲|💸/),fd=l.search(/\d/);
+   if(fd>=0&&fi>=0&&fd<fi){while((m=re2.exec(l)))add(m[2],m[1])}else{while((m=re1.exec(l)))add(m[1],m[2])}
+   
+   if(!Object.keys(am).length)return;
+   if(nz(l).includes('خزنة')){vault=vault||{coins:0,gems:0,gp:0};['coins','gems','gp'].forEach(k=>{if(am[k])vault[k]+=am[k]});return}
+   const name=cleanName(l).replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F]/gu,' ').replace(/[\d,.]+/g,' ').replace(/[:：\-–—•|]+/g,' ').replace(/\s+/g,' ').trim();
+   if(name)pl.push(Object.assign({name,coins:0,gems:0,gp:0,usd:0},am));
+  });
+ }
+ return{players:pl,vault};
+}
+function salaryM(){if(!['owner','deputyOwner'].includes(kind()))return toast('الرواتب يسجلها صاحب النظام ونائبه فقط');
+ modal('༺『 ❖ إضافة رواتب '+W[world].n+' ❖ 』༻',`<p class="mu">الصق القائمة كما هي. تُضاف قيمة كل لاعب إلى رصيده (لا تستبدله)، ويُتخطّى المسافرون.</p><textarea id="sl" rows="12" placeholder="الصق هنا"></textarea>`,'معاينة',()=>{
+  const r=parseSalary($('sl').value);
+  const pl=r.players.filter(q=>q.coins||q.gems||q.gp||q.usd);
+  if(!pl.length&&!r.vault)return toast('لم أجد رواتب في النص');
+  const ex=name=>S.players.find(p=>p.world===world&&nkey(cleanName(p.name))===nkey(cleanName(name)));
+  const ex2=q=>ex(q.name)||(q.role?S.players.find(p=>p.staff&&(p.world===world||p.staff==='deputyOwner')&&nkey(cleanName(label(p.staff)))===nkey(cleanName(q.role))):null);
+  const ok=[],trav=[],no=[];
+  pl.forEach(q=>{const p=ex2(q);if(!p)no.push(q);else if(p.traveling)trav.push({p,q});else ok.push({p,q})});
+  const vv=!!r.vault&&['owner','deputyOwner'].includes(kind())&&!['sys','kingdom'].includes(world);
+  const fm=q=>[['coins','💰'],['gems','💎'],['gp','💲'],['usd','💸']].filter(([k])=>q[k]).map(([k,e])=>'+'+fmt(q[k])+e).join(' ');
+  modal('༺『 ❖ معاينة الرواتب ❖ 』༻',`<p>✅ ${ok.length} · ✈️ ${trav.length} مسافر · ❌ ${no.length} غير موجود${vv?' · 🏦 الخزنة':''}</p><div style="max-height:40vh;overflow:auto">${ok.map(({p,q})=>`<div class="row"><span>◈ ${esc(p.name)}${q.role?' · '+esc(q.role):''}</span><b>${fm(q)}</b></div>`).join('')}${trav.map(({p})=>`<div class="row"><span>${esc(p.name)}</span><b>✈️ مسافر — يُتخطى</b></div>`).join('')}${no.map(q=>`<div class="row"><span>${esc(q.name)}</span><b>❌ غير موجود</b></div>`).join('')}${vv?`<div class="row"><span>🏦 الخزنة</span><b>${fm(r.vault)}</b></div>`:''}</div>${r.vault&&!vv?'<p class="mu">قيمة الخزنة في القائمة لن تُطبَّق (لصاحب النظام ونائبه فقط).</p>':''}`,'تنفيذ',()=>{
+   if(!ok.length&&!vv)return toast('لا يوجد ما يُنفَّذ');
+   const tot={coins:0,gems:0,gp:0,usd:0};
+   ok.forEach(({p,q})=>{['coins','gems','gp','usd'].forEach(k=>{if(q[k]){p[k]+=q[k];tot[k]+=q[k]}})});
+   if(vv)['coins','gems','gp'].forEach(k=>{if(r.vault[k])S.vaults[world][k]+=r.vault[k]});
+   addLog(world,'❖ راتب العالم: '+ok.length+' لاعب ('+fm(tot)+')'+(vv?' + الخزنة':'')+(trav.length?' — مسافرون تُخطّوا: '+trav.map(x=>x.p.name).join('، '):'')+(no.length?' — غير موجودين: '+no.map(q=>q.name).join('، '):''));
+   closeM();render();toast('تم توزيع الرواتب');
+  });
+ });
+}
+function vxApply(){
+ if(!['owner','deputyOwner'].includes(kind())||['sys','kingdom'].includes(world))return;
+ const s=+$('vxo').value,v=S.vaults[world];
+ const vals=K.map((k,i)=>[k,+$('vx'+i).value||0]).filter(x=>x[1]>0);
+ if(!vals.length)return toast('أدخل مبلغاً');
+ if(vals.some(([k,x])=>v[k]+s*x<0))return toast('رصيد الخزنة لا يكفي');
+ const ch=[];vals.forEach(([k,x])=>{v[k]+=s*x;ch.push(fmt(x)+' '+C[k][1])});
+ addLog(world,(s>0?'إضافة ':'خصم ')+ch.join(' + ')+(s>0?' إلى':' من')+' الخزنة'+($('vxr').value?' — '+$('vxr').value:''));
+ render();toast('تمت العملية');
+}
+function resetGo(){if(!['owner','deputyOwner','king'].includes(kind()))return toast('التصفير وتغيير الشخصية للملك وما فوقه فقط');
+ const p=S.players.find(x=>x.id===$('rp').value);if(!p)return toast('اختر لاعباً');if(kind()==='king'&&p.world!==wd())return toast('ليس من عالمك');
+ const mode=$('rm').value,nn=$('rn').value.trim(),nc=$('rc').value,clr=$('rk').checked,why=$('rr').value.trim();
+ const doReset=mode!=='char',doChar=mode!=='reset';
+ if(doChar&&!nn)return toast('اكتب اسم الشخصية الجديدة');
+ if(doChar&&S.players.some(x=>x.id!==p.id&&x.world===p.world&&nkey(cleanName(x.name))===nkey(cleanName(nn))))return toast('هذا الاسم مستخدم في العالم');
+ const L=[];
+ if(doReset)L.push('• تصفير: اللفل 1، الاكس بي 0، وكل الأرصدة 0');
+ if(doChar)L.push('• تغيير الشخصية: الاسم ← '+esc(nn)+(nc?'، الفئة ← '+nc:'')+'، ومسح القدرات والإستفاقة والحزم والآب والباس');
+ if(clr)L.push('• مسح الممتلكات (الموارد والمرافقون والمعدات)');
+ modal('⚠️ تأكيد على '+esc(p.name),`<div style="line-height:1.9">${L.join('<br>')}</div><p class="mu">يمكنك التراجع عنها بزر "↩️ تراجع" على بطاقة اللاعب.</p>`,'تنفيذ',()=>{
+  const r=getRec(p),o0=JSON.stringify(r),old=p.name,parts=[];
+  if(doReset){p.level=1;p.xp=0;p.coins=0;p.gems=0;p.gp=0;p.usd=0;parts.push('تصفير')}
+  if(doChar){p.name=nn;if(nc)p.cat=nc;r.awak='0';r.pack='';r.ab='';r.bass='';r.seasons=[{great:[],real:[],special:[]},{great:[],real:[],special:[]}];parts.push('تغيير الشخصية من '+old+' إلى '+nn)}
+  if(clr){r.res=[];r.comps=[];r.gear=[];parts.push('مسح الممتلكات')}
+  recDiff(p,o0,'تصفير/شخصية',true);
+  addLog(p.world,parts.join(' + ')+(doChar?'':' — '+p.name)+(why?' — '+why:''));
+  closeM();render();toast('تم التنفيذ');
+ });
+}
+function vPay(){if(!['owner','deputyOwner'].includes(kind())){$('v').innerHTML='';return}
+ const L=wp(),hi=['owner','deputyOwner'].includes(kind())&&!['sys','kingdom'].includes(world);
+ $('v').innerHTML=(['owner','deputyOwner'].includes(kind())?`<div class="card"><h3>༺『 ❖ عـمـلـيـة إضـافـة ࢪاتـب ❖ 』༻</h3><p class="mu">الصق قائمة الرواتب بالقالب المعتاد، فتُضاف قيمة كل مستفيد إلى رصيده تلقائياً.</p><div class="acts"><button class="btn" onclick="salaryM()">◈ لصق قائمة الرواتب</button><button class="btn g" onclick="salTpl()">◈ نسخ القالب الفارغ</button></div></div>`:'')
+ +(hi?`<div class="card"><h3>🏦 راتب الخزنة</h3><label>العملية</label><select id="vxo"><option value="1">إضافة</option><option value="-1">خصم</option></select><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 6px">${K.map((k,i)=>`<div><label>${C[k][1]} ${C[k][0]}</label><input id="vx${i}" type="number" min="0" step="any"></div>`).join('')}</div><label>السبب</label><input id="vxr"><button class="btn" onclick="vxApply()">تنفيذ</button></div>`:'');
+}
+function vRst(){
+ if(!['owner','deputyOwner','king'].includes(kind())){$('v').innerHTML='';return}
+ const L=wp();
+ $('v').innerHTML=`<div class="card"><h3>🔄 تصفير / تغيير شخصية</h3>`+(L.length?`<label>اللاعب</label><select id="rp">${L.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><label>العملية</label><select id="rm"><option value="both">تصفير + تغيير الشخصية</option><option value="reset">تصفير فقط (بدون تغيير الشخصية)</option><option value="char">تغيير الشخصية فقط (بدون تصفير)</option></select><label>اسم الشخصية الجديدة (عند تغيير الشخصية)</label><input id="rn"><label>الفئة الجديدة</label><select id="rc"><option value="">بدون تغيير</option><option>هجومي</option><option>متوازن</option><option>دفاعي</option></select><label style="display:flex;gap:8px;align-items:center;color:var(--tx)"><input type="checkbox" id="rk" style="width:auto;margin:0">مسح الممتلكات أيضاً (الموارد والمرافقون والمعدات)</label><label style="margin-top:8px">السبب</label><input id="rr"><button class="btn" onclick="resetGo()">تنفيذ</button>`:'<p class="mu">لا يوجد لاعبون.</p>')+`</div>`;
+}
+function setVault(){
+ if(!['owner','deputyOwner','king'].includes(kind()))return;
+ const v=S.vaults[world];
+ modal('✍️ ضبط أرصدة الخزنة',`<p class="mu">اكتب القيمة النهائية لكل عملة (الرصيد الجديد، لا المبلغ المضاف).</p><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 6px">${K.map((k,i)=>`<div><label>${C[k][1]} ${C[k][0]}</label><input id="sv${i}" type="number" min="0" step="any" value="${v[k]}"></div>`).join('')}</div><label>السبب</label><input id="svr">`,'حفظ',()=>{
+  const nv=K.map((k,i)=>{const raw=$('sv'+i).value;return raw===''?v[k]:+raw});
+  if(nv.some(x=>isNaN(x)||x<0))return toast('أدخل أرقاماً صحيحة (لا رصيد سالب للخزنة)');
+  const ch=[];
+  K.forEach((k,i)=>{if(nv[i]!==v[k]){ch.push(C[k][0]+' '+fmt(v[k])+' ← '+fmt(nv[i]));v[k]=nv[i]}});
+  if(!ch.length)return toast('لا يوجد تغيير');
+  addLog(world,'ضبط يدوي لأرصدة الخزنة: '+ch.join('، ')+($('svr').value?' — '+$('svr').value:''));
+  closeM();render();toast('تم ضبط الخزنة');
+ });
+}
+let selP='';
+function recBox(p){curRec=recText(p);curCopy=cardText(p)+'\n\n'+curRec;return `<div class="card"><h3>📖 سجل قدرات ${esc(p.name)}</h3><div style="white-space:pre-wrap;line-height:1.9;font-size:.9rem;margin:10px 0">${esc(curRec)}</div><div class="acts"><button class="btn g s" onclick="cpRec()">نسخ</button>${canEdit()?`<button class="btn g s" onclick="recHist('${p.id}')">🕘 سجل التعديلات</button>`:''}${canEdit()?`<button class="btn s" onclick="editRec('${p.id}')">✏️ تعديل السجل</button><button class="btn g s" onclick="editRaw('${p.id}')">📝 تعديل نصي حر</button>`:''}</div></div>`}
+function vVault(){
+ const v=S.vaults[world];
+ $('v').innerHTML=`<div class="card"><h3>〘${W[world].i} خزنة عالم ${W[world].n} ${W[world].i}〙♕</h3><div style="margin-top:8px">${K.map(k=>`<div class="row"><span>${C[k][0]}</span><b>${fmt(v[k])} ${C[k][1]}</b></div>`).join('')}</div>
+ <div class="acts">${canFill()?`<button class="btn s" onclick="fillV()">± تعبئة / سحب</button><button class="btn g s" onclick="setVault()">✍️ ضبط الأرصدة</button>`:''}${canEdit()?`<button class="btn s" onclick="transV()">💸 تحويل للاعب</button>`:''}</div></div>`;
+}
+function fillV(){if(kind()!=='owner')return fillMine();
+ modal('تعديل الخزنة',`<label>العملة</label><select id="a">${K.map(k=>`<option value="${k}">${C[k][1]} ${C[k][0]}</option>`).join('')}</select><label>العملية</label><select id="b"><option value="1">تعبئة</option><option value="-1">سحب</option></select><label>المبلغ</label><input id="d" type="number" min="0">`,'تنفيذ',()=>{
+  const k=$('a').value,s=+$('b').value,x=+$('d').value,v=S.vaults[world];
+  if(!(x>0))return toast('أدخل مبلغاً صحيحاً');if(v[k]+s*x<0)return toast('رصيد الخزنة لا يكفي');
+  v[k]+=s*x;addLog(world,`${s>0?'تعبئة':'سحب'} ${fmt(x)} ${C[k][0]} ${s>0?'في':'من'} الخزنة`);save();closeM();render()});
+}
+function transV(){
+ const L=wp();if(!L.length)return toast('لا يوجد لاعبون');
+ modal('تحويل من الخزنة',`<label>اللاعب</label><select id="a">${L.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select><label>العملة</label><select id="b">${K.map(k=>`<option value="${k}">${C[k][1]} ${C[k][0]}</option>`).join('')}</select><label>المبلغ</label><input id="d" type="number" min="0">`,'تحويل',()=>{
+  const p=S.players.find(x=>x.id===$('a').value),k=$('b').value,x=+$('d').value,v=S.vaults[world];
+  if(!(x>0))return toast('أدخل مبلغاً صحيحاً');if(v[k]<x)return toast('رصيد الخزنة لا يكفي');
+  v[k]-=x;p[k]+=x;addLog(world,`تحويل ${fmt(x)} ${C[k][0]} من الخزنة إلى ${p.name}`);save();closeM();render();toast('تم التحويل')});
+}
+
+function vRoles(){
+ const KDK=['monsterCtl','kdMerchant','resMerchant'];
+ const keys=kind()==='owner'?['deputyOwner','king:hell','king:demons','king:magic',...KDK]:kind()==='deputyOwner'?KDK:['kingDep:'+wd(),'merchant:'+wd()];
+ $('v').innerHTML=`${kind()==='owner'?`<div class="acts" style="margin:0 0 10px"><button class="btn g s" onclick="backup()">💾 نسخة احتياطية</button><button class="btn g s" onclick="chOwner()">🔑 تغيير كود صاحب النظام</button><label class="btn g s" style="display:inline-block">♻️ استعادة نسخة<input type="file" accept=".json" hidden onchange="restore(this.files[0])"></label></div>`:''}<p class="mu">ولّد كوداً جديداً وسلّمه للشخص المستهدف، وعند إدخاله يصبح بهذه الرتبة. توليد كود جديد يلغي القديم.</p>`+keys.map(k=>`<div class="card"><div class="top" style="margin:0"><div><b>${label(k)}</b>${(()=>{const r=S.players.find(p=>p.staff===k);return r&&r.name!==label(k)?' — '+esc(r.name):''})()}<br>${S.roles[k]?`<span class="code">${S.roles[k]}</span>`:'<span class="mu">لا يوجد كود</span>'}</div><div class="acts" style="margin:0">${S.roles[k]?`<button class="btn g s" onclick="cp('${S.roles[k]}')">نسخ</button>`:''}<button class="btn s" onclick="gen('${k}')">توليد كود</button></div></div></div>`).join('');
+}
+function gen(k){
+ const a=k.split(':')[0];if(a!=='king'&&a!=='deputyOwner')return doGen(k);
+ const r=S.players.find(p=>p.staff===k);
+ modal('اسم صاحب الرتبة',`<label>${label(k)}</label>${S.roles[k]&&r?`<select id="gk"><option value="same">نفس الشخص (استبدال الكود فقط)</option><option value="new">شخص جديد (سجل جديد)</option></select>`:''}<input id="gn" value="${esc(r&&r.name!==label(k)?r.name:'')}" placeholder="الاسم (اختياري — يكمله صاحب الرتبة عند دخوله)">`,'توليد الكود',()=>{const n=$('gn').value.trim(),nw=!!$('gk')&&$('gk').value==='new';doGen(k,n,nw);closeM()});
+}
+function doGen(k,name,nw){if(nw){const o=S.players.find(p=>p.staff===k);if(o){delete o.staff;o.id='p'+Date.now()}}S.roles[k]=genCode();if(name){ensureStaff();const r=S.players.find(p=>p.staff===k);if(r)r.name=name}addLog(wd?k.split(':')[1]||'all':'all','توليد كود جديد لرتبة '+label(k)+(name?' باسم '+name:'')+(nw?' — سجل جديد، والسجل السابق صار لاعباً عادياً':''));save();render()}
+function cp(c){try{navigator.clipboard.writeText(c);toast('تم النسخ')}catch(e){toast(c)}}
+
+function vMon(){
+ const L=wp();
+ $('v').innerHTML=L.length?`<div class="card"><h3>🐲 تسجيل جائزة معركة</h3><label>اللاعب</label><select id="mp">${L.map(p=>`<option value="${p.id}">${esc(p.name)}${p.origin&&W[p.origin]?' · '+W[p.origin].n:''}</option>`).join('')}</select><label>النتيجة</label><select id="mr"><option value="win">🏆 فوز</option><option value="lose">💔 خسارة</option></select><label>الوحش (اختياري)</label><input id="mm"><label>الجائزة (اترك ما لا تريد منحه فارغاً)</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:0 8px">${[...Object.keys(C),'xp'].map(k=>`<div><label>${k==='xp'?'✨ XP':C[k][1]+' '+C[k][0]}</label><input class="mv" data-k="${k}" type="number" step="any" min="0"></div>`).join('')}</div><button class="btn" onclick="prize()">تسجيل الجائزة</button></div>`:'<p class="mu">لا يوجد لاعبون في المملكة الآن.</p>';
+}
+function prize(){
+ const p=S.players.find(x=>x.id===$('mp').value);if(!p)return toast('اختر لاعباً');
+ const vs=[...document.querySelectorAll('.mv')].map(i=>[i.dataset.k,+i.value]).filter(x=>x[1]>0);
+ if(!vs.length)return toast('أدخل جائزة واحدة على الأقل');
+ const win=$('mr').value==='win',mn=$('mm').value.trim(),l0=p.level;
+ vs.forEach(([k,v])=>{p[k]=win?p[k]+v:Math.max(0,p[k]-v)});while(p.xp>=p.level*1000){p.xp-=p.level*1000;p.level++}
+ addLog('kingdom',`${win?'🏆 فوز':'💔 خسارة'} اللاعب ${p.name}${mn?' أمام '+mn:''} — ${win?'جائزة':'خصم'}: ${vs.map(([k,v])=>fmt(v)+' '+(k==='xp'?'XP':C[k][0])).join(' + ')}${p.level>l0?' (ترقية من لفل '+l0+' إلى لفل '+p.level+')':''}`,p.origin);
+ render();toast(p.level>l0?'🆙 ترقية إلى لفل '+p.level:'سُجّلت الجائزة');
+}
+function vTrade(){
+ if(!seeAll()||!TW.includes(world)){$('v').innerHTML='';return}
+ const others=TW.filter(w=>w!==world);if(!others.includes(trTo))trTo=others[0];
+ const ok=w=>S.players.filter(p=>p.world===w&&!p.staff&&!p.traveling);
+ const opt=L=>L.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+ const A=ok(world),B=ok(trTo),sell=trMode==='sell';
+ $('v').innerHTML=`<div class="card"><h3>🤝 بيع وتبادل اللاعبين</h3><p class="mu">يتم بين عوالم الجحيم والشياطين والسحر فقط، وينفذه صاحب النظام ونائبه.</p>
+ <label>العملية</label><select id="tm" onchange="trMode=this.value;vTrade()"><option value="sell">💰 بيع لاعب</option><option value="swap">🔁 تبادل لاعبين</option></select>
+ <label>${sell?'العالم المشتري':'العالم الآخر'}</label><select id="tw" onchange="trTo=this.value;vTrade()">${others.map(w=>`<option value="${w}" ${w===trTo?'selected':''}>${W[w].i} ${W[w].n}</option>`).join('')}</select>
+ <label>${sell?'اللاعب المباع':'لاعب'} من ${W[world].i} ${W[world].n}</label>${A.length?`<select id="ta">${opt(A)}</select>`:'<p class="mu">لا يوجد لاعبون متاحون.</p>'}
+ ${sell?`<label>السعر</label><div style="display:flex;gap:8px"><input id="tv" type="number" min="0" step="any"><select id="tc">${K.map(k=>`<option value="${k}">${C[k][1]} ${C[k][0]}</option>`).join('')}</select></div><p class="mu">يُخصم السعر من خزنة ${W[trTo].n} ويُضاف إلى خزنة ${W[world].n}.</p>`
+ :`<label>لاعب من ${W[trTo].i} ${W[trTo].n}</label>${B.length?`<select id="tb">${opt(B)}</select>`:'<p class="mu">لا يوجد لاعبون متاحون.</p>'}`}
+ <button class="btn" onclick="tradeGo()">تنفيذ</button></div>`;
+ $('tm').value=trMode;
+}
+function tradeGo(){
+ if(!seeAll()||!TW.includes(world)||!TW.includes(trTo)||trTo===world)return;
+ const w1=world,w2=trTo,n1=W[w1].n,n2=W[w2].n,a=$('ta')&&S.players.find(x=>x.id===$('ta').value);
+ if(!a||a.world!==w1||a.staff||a.traveling)return toast('اختر لاعباً صالحاً');
+ if(trMode==='swap'){
+  const b=$('tb')&&S.players.find(x=>x.id===$('tb').value);
+  if(!b||b.world!==w2||b.staff||b.traveling)return toast('اختر اللاعب الآخر');
+  modal('🔁 تأكيد التبادل',`<p>تبادل <b>${esc(a.name)}</b> (${n1}) مع <b>${esc(b.name)}</b> (${n2})؟</p>`,'تأكيد',()=>{
+   a.world=w2;b.world=w1;
+   finishTrade(w1,w2,`🔁 تبادل لاعبين: انتقل ${a.name} من ${n1} إلى ${n2}، وانتقل ${b.name} من ${n2} إلى ${n1}`)});
+ }else{
+  const v=+$('tv').value,k=$('tc').value;
+  if(!(v>0))return toast('أدخل سعراً صحيحاً');if(!K.includes(k))return;
+  if(S.vaults[w2][k]<v)return toast('خزنة عالم '+n2+' لا تكفي ('+fmt(S.vaults[w2][k])+' '+C[k][1]+')');
+  modal('💰 تأكيد البيع',`<p>بيع <b>${esc(a.name)}</b> من ${n1} إلى ${n2} بسعر <b>${fmt(v)} ${C[k][1]}</b>؟</p><p class="mu">يُخصم المبلغ من خزنة ${n2} ويُضاف إلى خزنة ${n1}.</p>`,'تأكيد',()=>{
+   if(S.vaults[w2][k]<v)return toast('خزنة عالم '+n2+' لا تكفي');
+   S.vaults[w2][k]-=v;S.vaults[w1][k]+=v;a.world=w2;
+   finishTrade(w1,w2,`💰 بيع لاعب: بيع ${a.name} من ${n1} إلى ${n2} بسعر ${fmt(v)} ${C[k][0]} (خُصم من خزنة ${n2} وأُضيف إلى خزنة ${n1})`)});
+ }
+}
+function finishTrade(w1,w2,txt){
+ const t=new Date().toLocaleString('ar-EG'),by=label(sess);
+ [w1,w2].forEach(w=>S.log.unshift({t,w,by,s:txt}));capLog();
+ S.undo[w1]=[];S.undo[w2]=[];
+ noPush=true;save();noPush=false;closeM();render();toast('تمت العملية');
+}
+function vLog(){
+ const L=S.log.filter(l=>seeAll()?(l.w===world||l.w==='all'):(l.w===world&&(world!=='kingdom'||kind()!=='king'||l.o===wd())));
+ $('v').innerHTML=L.map(l=>`<div class="card"><div>${esc(l.s)}</div><div class="mu">${esc(l.by)} · ${esc(l.t)}</div></div>`).join('')||'<p class="mu">لا توجد عمليات بعد.</p>';
+}
+
+function chOwner(){
+ modal('\ud83d\udd11 \u062a\u063a\u064a\u064a\u0631 \u0643\u0648\u062f \u0635\u0627\u062d\u0628 \u0627\u0644\u0646\u0638\u0627\u0645',`<p class="mu">\u0627\u0644\u0643\u0648\u062f \u0627\u0644\u062c\u062f\u064a\u062f \u0647\u0648 \u0627\u0644\u0630\u064a \u0633\u064a\u062f\u062e\u0644 \u0628\u0647 \u0635\u0627\u062d\u0628 \u0627\u0644\u0646\u0638\u0627\u0645\u060c \u0648\u064a\u062e\u0631\u062c \u0627\u0644\u0643\u0648\u062f \u0627\u0644\u062d\u0627\u0644\u064a \u0645\u0646 \u0627\u0644\u062e\u062f\u0645\u0629.</p><label>\u0627\u0644\u0643\u0648\u062f \u0627\u0644\u062c\u062f\u064a\u062f</label><input id="oc" type="text">`,'\u062a\u063a\u064a\u064a\u0631',()=>{
+  const c=$('oc').value.trim();if(c.length<4)return toast('\u0627\u0644\u0643\u0648\u062f \u0642\u0635\u064a\u0631 \u062c\u062f\u0627\u064b');
+  if(Object.keys(S.roles).some(k=>k!=='owner'&&S.roles[k]===c))return toast('\u0647\u0630\u0627 \u0627\u0644\u0643\u0648\u062f \u0645\u0633\u062a\u062e\u062f\u0645');
+  S.roles.owner=c;addLog('all','\u062a\u063a\u064a\u064a\u0631 \u0643\u0648\u062f \u0635\u0627\u062d\u0628 \u0627\u0644\u0646\u0638\u0627\u0645');closeM();logout();
+ });
+}
+// ===== المزامنة السحابية (Firebase) + النسخ الاحتياطي =====
+let cloud=null,pushT=null,lastRemote='',cloudReady=false,cloudStatus='';
+function setCS(t){cloudStatus=t;const e=$('cs');if(e)e.textContent=t}
+function cloudPart(){const c={...S};delete c.undo;return JSON.stringify(c)}
+function cloudPush(){if(!cloud||!cloudReady)return;clearTimeout(pushT);pushT=setTimeout(()=>{pushT=null;const j=cloudPart();lastRemote=j;cloud.set({json:j,t:Date.now()}).then(()=>setCS('\u2601\ufe0f \u0645\u062a\u0635\u0644')).catch(e=>{console.error(e);setCS('\u26a0\ufe0f \u0641\u0634\u0644 \u0627\u0644\u062d\u0641\u0638 \u0641\u064a \u0627\u0644\u0633\u062d\u0627\u0628\u0629: '+(e.code||e.message));toast('\u26a0\ufe0f \u0644\u0645 \u064a\u064f\u062d\u0641\u0638 \u0641\u064a \u0627\u0644\u0633\u062d\u0627\u0628\u0629')})},400)}
+function fixS(){S.undo=S.undo||{};S.undo.pl=S.undo.pl||{};['hell','demons','magic','sys','kingdom'].forEach(w=>{S.undo[w]=S.undo[w]||[]});S.vaults.sys=S.vaults.sys||{coins:0,gems:0,gp:0};S.vaults.kingdom=S.vaults.kingdom||{coins:0,gems:0,gp:0};S.dests=S.dests||[{n:'\u0627\u0644\u0645\u0645\u0644\u0643\u0629',price:10000}]}
+function safeRender(){if($('m').style.display==='flex'||/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){setTimeout(safeRender,2500);return}render()}
+function applyRemote(j){const u=S.undo;S=JSON.parse(j);S.undo=u;fixS();snap();try{localStorage.setItem('og_data',JSON.stringify(S))}catch(e){}safeRender();lodgeTick()}
+function backup(){const b=new Blob([cloudPart()],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='origins-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click()}
+function restore(f){if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!o.roles||!o.players)throw 0;const u=S.undo;S=o;S.undo=u;fixS();snap();save();render();toast('\u062a\u0645\u062a \u0627\u0644\u0627\u0633\u062a\u0639\u0627\u062f\u0629')}catch(e){toast('\u0645\u0644\u0641 \u063a\u064a\u0631 \u0635\u0627\u0644\u062d')}};r.readAsText(f)}
+if(window.firebase&&window.FIREBASE_CONFIG&&FIREBASE_CONFIG.apiKey){
+ try{
+  firebase.initializeApp(FIREBASE_CONFIG);
+  const ref=firebase.firestore().collection('app').doc('state');
+  cloudStatus='\u23f3 \u062c\u0627\u0631\u064d \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0644\u0633\u062d\u0627\u0628\u0629...';
+  ref.onSnapshot(sn=>{
+   if(sn.metadata.fromCache&&!cloudReady&&!sn.exists)return;
+   setCS('\u2601\ufe0f \u0645\u062a\u0635\u0644');
+   if(sn.metadata.hasPendingWrites||pushT)return;
+   if(!sn.exists){
+    if(!cloudReady){cloudReady=true;S={roles:{},players:[],vaults:{hell:{coins:0,gems:0,gp:0},demons:{coins:0,gems:0,gp:0},magic:{coins:0,gems:0,gp:0}},log:[],undo:S.undo};fixS();snap();render()}
+    return}
+   const j=sn.data().json;cloudReady=true;if(lastRemote&&j===lastRemote)return;lastRemote=j;applyRemote(j)
+  },e=>{console.error(e);setCS('\u26a0\ufe0f \u062e\u0637\u0623 \u0641\u064a \u0627\u0644\u0627\u062a\u0635\u0627\u0644: '+(e.code||e.message)+' \u2014 \u062a\u062d\u0642\u0642 \u0645\u0646 \u0646\u0634\u0631 \u0627\u0644\u0642\u0648\u0627\u0639\u062f \u0648\u0635\u062d\u0629 \u0625\u0639\u062f\u0627\u062f\u0627\u062a Firebase');render()});
+  cloud=ref;
+ }catch(e){console.error(e);cloudStatus='\u26a0\ufe0f \u062e\u0637\u0623: '+e.message}
+}
+if(!cloud&&!cloudStatus)cloudStatus='\u26a0\ufe0f \u0648\u0636\u0639 \u0645\u062d\u0644\u064a: \u0625\u0639\u062f\u0627\u062f\u0627\u062a Firebase \u063a\u064a\u0631 \u0645\u0643\u062a\u0645\u0644\u0629';
+lodgeTick();render();
+</script>
+</body>
+</html>
